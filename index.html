@@ -1,47 +1,32 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tablero Encuesta IA</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="UTF-8">
+  <title>Tablero Respuestas Encuesta</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>📊 Tablero de Resultados Encuesta IA</h1>
+  <h1>📊 Tablero de Resultados</h1>
 
-        <!-- Selector de información -->
-        <label for="colegioSelect">Seleccione información:</label>
-        <select id="colegioSelect">
-            <option value="general">Información general</option>
-            <option value="Argelia">Argelia</option>
-            <option value="La Giralda">La Giralda</option>
-            <option value="El Nogal">El Nogal</option>
-            <option value="Laurel de Cera">Laurel de Cera</option>
-            <option value="Parques de bogotá">Parques de Bogotá</option>
-            <option value="Santiago de las atalayas">Santiago de las Atalayas</option>
-            <option value="Jorge Isaacs">Jorge Isaacs</option>
-            <option value="Jaime Garzón">Jaime Garzón</option>
-            <option value="Las Margaritas">Las Margaritas</option>
-            <option value="Miravalle">Miravalle</option>
-            <option value="Ciudad Chengdú">Ciudad Chengdú</option>
-        </select>
+  <div>
+    <label for="fileInput"><b>Cargar archivo Excel (.xlsx):</b></label>
+    <input type="file" id="fileInput" accept=".xlsx" />
+  </div>
 
-        <!-- Subir archivo Excel -->
-        <input type="file" id="fileInput" accept=".xlsx">
+  <div>
+    <label for="colegioSelect"><b>Seleccione vista:</b></label>
+    <select id="colegioSelect">
+      <option value="general">Información General</option>
+      <!-- Los colegios se agregan automáticamente desde el Excel -->
+    </select>
+  </div>
 
-        <!-- Resumen numérico -->
-        <div id="resumen" class="resumen"></div>
+  <div id="resumen"></div>
 
-        <!-- Contenedor de gráficos -->
-        <div id="chartsContainer" class="charts-grid"></div>
+  <h2>📈 Resultados</h2>
+  <div id="chartsContainer" class="charts-grid"></div>
 
-        <!-- Contenedor de preguntas abiertas -->
-        <div id="openQuestions" class="open-questions"></div>
-    </div>
-
-    <script src="script.js"></script>
-</body>
-</html>
+  <h2>📝 Preguntas Abiertas</h2>
+  <
