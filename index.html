@@ -10,19 +10,36 @@
 </head>
 <body>
     <div class="container">
-        <h1>Tablero de Resultados Encuesta IA</h1>
+        <h1>📊 Tablero de Resultados Encuesta IA</h1>
 
-        <!-- Selector de colegio -->
+        <!-- Selector de información -->
         <label for="colegioSelect">Seleccione información:</label>
         <select id="colegioSelect">
             <option value="general">Información general</option>
+            <option value="Argelia">Argelia</option>
+            <option value="La Giralda">La Giralda</option>
+            <option value="El Nogal">El Nogal</option>
+            <option value="Laurel de Cera">Laurel de Cera</option>
+            <option value="Parques de bogotá">Parques de Bogotá</option>
+            <option value="Santiago de las atalayas">Santiago de las Atalayas</option>
+            <option value="Jorge Isaacs">Jorge Isaacs</option>
+            <option value="Jaime Garzón">Jaime Garzón</option>
+            <option value="Las Margaritas">Las Margaritas</option>
+            <option value="Miravalle">Miravalle</option>
+            <option value="Ciudad Chengdú">Ciudad Chengdú</option>
         </select>
 
-        <!-- Cargar archivo Excel -->
+        <!-- Subir archivo Excel -->
         <input type="file" id="fileInput" accept=".xlsx">
+
+        <!-- Resumen numérico -->
+        <div id="resumen" class="resumen"></div>
 
         <!-- Contenedor de gráficos -->
         <div id="chartsContainer" class="charts-grid"></div>
+
+        <!-- Contenedor de preguntas abiertas -->
+        <div id="openQuestions" class="open-questions"></div>
     </div>
 
     <script src="script.js"></script>
