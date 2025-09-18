@@ -1,32 +1,747 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Tablero Respuestas Encuesta</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-  <h1>📊 Tablero de Resultados</h1>
+import React, { useState, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { Upload, FileSpreadsheet, Users, BarChart3, School, TrendingUp, MessageSquare, Target, Briefcase, X } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
-  <div>
-    <label for="fileInput"><b>Cargar archivo Excel (.xlsx):</b></label>
-    <input type="file" id="fileInput" accept=".xlsx" />
-  </div>
+const COLEGIOS = [
+  "Argelia",
+  "La Giralda",
+  "El Nogal",
+  "Laurel de Cera",
+  "Parques de bogotá",
+  "Santiago de las atalayas",
+  "Jorge Isaacs",
+  "Jaime Garzón",
+  "Las Margaritas",
+  "Miravalle",
+  "Ciudad Chengdú"
+];
 
-  <div>
-    <label for="colegioSelect"><b>Seleccione vista:</b></label>
-    <select id="colegioSelect">
-      <option value="general">Información General</option>
-      <!-- Los colegios se agregan automáticamente desde el Excel -->
-    </select>
-  </div>
+const EXCLUDED_COLUMNS = [
+  "Marca temporal",
+  "Puntuación",
+  "NOMBRE COMPLETO (EN MAYÚSCULAS)",
+  "CARGO QUE DESEMPEÑA (EN MAYÚSCULA)"
+];
 
-  <div id="resumen"></div>
+// Palabras vacías en español
+const STOP_WORDS = [
+  'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'es', 'se', 'no', 'te', 'lo', 'le', 'da', 'su', 'por', 'son', 'con', 
+  'para', 'una', 'del', 'las', 'los', 'como', 'pero', 'sus', 'fue', 'ser', 'tiene', 'han', 'hay', 'era', 'muy',
+  'mas', 'sin', 'sobre', 'puede', 'hacer', 'debe', 'donde', 'cuando', 'quien', 'todo', 'esta', 'ese', 'esta',
+  'mayor', 'mejor', 'bien', 'cada', 'mas', 'hasta', 'entre', 'algunos', 'alguna', 'algunos', 'otras', 'otros'
+];
 
-  <h2>📈 Resultados</h2>
-  <div id="chartsContainer" class="charts-grid"></div>
+// Paleta de colores de Alianza Educativa
+const COLORS = ['#f44336', '#e91e63', '#9d27b0', '#673ab7', '#2b3b6d', '#00a9f4', '#00bcd4', '#009688', '#4cb050', '#cddc39', '#ffeb3b', '#ff9800', '#ff5721', '#18275E', '#FA860B', '#334494', '#1DD68E'];
 
-  <h2>📝 Preguntas Abiertas</h2>
-  <
+const SurveyDashboard = () => {
+  const [data, setData] = useState(null);
+  const [selectedView, setSelectedView] = useState('general');
+  const [loading, setLoading] = useState(false);
+  const [selectedWord, setSelectedWord] = useState(null);
+  const [showResponses, setShowResponses] = useState(false);
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      
+      setData(jsonData);
+    } catch (error) {
+      console.error('Error al leer el archivo:', error);
+      alert('Error al cargar el archivo. Por favor, verifica que sea un archivo Excel válido.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processedData = useMemo(() => {
+    if (!data || data.length === 0) return null;
+
+    // Filtrar columnas excluidas
+    const allColumns = Object.keys(data[0]);
+    const validColumns = allColumns.filter(col => !EXCLUDED_COLUMNS.includes(col));
+
+    // Identificar columna de colegio y cargo
+    const colegioColumn = validColumns.find(col => 
+      col.toLowerCase().includes('colegio') || 
+      col.toLowerCase().includes('institución') ||
+      col.toLowerCase().includes('escuela') ||
+      col.toLowerCase().includes('pertenece')
+    );
+
+    const cargoColumn = allColumns.find(col => 
+      col.toLowerCase().includes('cargo') && !EXCLUDED_COLUMNS.includes(col)
+    );
+
+    // Preguntas abiertas específicas identificadas
+    const specificOpenQuestions = [
+      "¿Para qué tareas específicas de tu trabajo estás aplicando estas herramientas de IA?",
+      "¿Qué sugerencias tienes para mejorar el uso de IA en los próximos informes SED?",
+      "¿Qué estrategias propondrías para optimizar los tiempos de revisión con la Oficina Central en próximos cortes?"
+    ];
+
+    // Clasificar preguntas
+    const multipleChoiceQuestions = [];
+    const openQuestions = [];
+
+    validColumns.forEach(col => {
+      if (col === colegioColumn || col === cargoColumn) return;
+      
+      // Verificar si es una pregunta abierta específica (coincidencia parcial)
+      const isSpecificOpenQuestion = specificOpenQuestions.some(openQ => 
+        col.toLowerCase().includes(openQ.toLowerCase().substring(0, 20)) ||
+        openQ.toLowerCase().includes(col.toLowerCase().substring(0, 20)) ||
+        col.toLowerCase().includes('tareas específicas') ||
+        col.toLowerCase().includes('sugerencias') && col.toLowerCase().includes('mejorar') ||
+        col.toLowerCase().includes('estrategias') && col.toLowerCase().includes('optimizar')
+      );
+
+      if (isSpecificOpenQuestion) {
+        openQuestions.push(col);
+      } else {
+        // Aplicar criterio automático para otras preguntas
+        const responses = data.map(row => row[col]).filter(Boolean);
+        const uniqueResponses = [...new Set(responses)];
+        const avgLength = responses.reduce((sum, resp) => sum + String(resp).length, 0) / responses.length;
+        
+        if (uniqueResponses.length > responses.length * 0.6 && avgLength > 40) {
+          openQuestions.push(col);
+        } else {
+          multipleChoiceQuestions.push(col);
+        }
+      }
+    });
+
+    return {
+      totalResponses: data.length,
+      totalQuestions: validColumns.length,
+      participatingSchools: colegioColumn ? [...new Set(data.map(row => row[colegioColumn]).filter(Boolean))].length : COLEGIOS.length,
+      multipleChoiceQuestions,
+      openQuestions,
+      colegioColumn,
+      cargoColumn,
+      rawData: data
+    };
+  }, [data]);
+
+  const getCargoData = (filteredData = null) => {
+    if (!processedData?.cargoColumn) return [];
+    
+    const workingData = filteredData || data;
+    const cargos = workingData.map(row => row[processedData.cargoColumn]).filter(Boolean);
+    const consolidatedCounts = {};
+    
+    // Lista específica de cargos para consolidar
+    const cargoConsolidation = [
+      { pattern: /(lider|líder).*(administrativ[oa]|admin)/i, consolidated: 'Líder Administrativo/a' },
+      { pattern: /(titular).*(superaula|super\s*aula)/i, consolidated: 'Titular de Superaula' },
+      { pattern: /(trabajador[a]?|trabaj\.?).*(social)/i, consolidated: 'Trabajador/a Social' },
+      { pattern: /(auxiliar|aux).*(sistemas?|sistema)/i, consolidated: 'Auxiliar de Sistemas' },
+      { pattern: /(auxiliar|aux).*(enfermeria|enfermería|enfermera|enfermero)/i, consolidated: 'Auxiliar de Enfermería' },
+      { pattern: /(auxiliar|aux).*(biblioteca|bibliote)/i, consolidated: 'Auxiliar de Biblioteca' },
+      { pattern: /(bibliotecari[oa]|bibliote)/i, consolidated: 'Bibliotecario' },
+      { pattern: /(coordinador[a]?|coord\.?|coordin)/i, consolidated: 'Coordinador' },
+      { pattern: /(rector[a]?|rectora|rect\.?)/i, consolidated: 'Rector o Rectora' },
+      { pattern: /(psicologo[a]?|psicóloga?|psi\.?|orientador[a]?)/i, consolidated: 'Psicólogo' },
+      { pattern: /(secretari[oa]).*(academico|académico|acad)/i, consolidated: 'Secretario académico' }
+    ];
+    
+    // Función para consolidar cargos según la lista específica
+    const normalizeCargo = (cargo) => {
+      const cargoStr = String(cargo).trim();
+      
+      for (const { pattern, consolidated } of cargoConsolidation) {
+        if (pattern.test(cargoStr)) {
+          return consolidated;
+        }
+      }
+      
+      // Si no coincide con ningún patrón, mantener original capitalizado
+      return cargoStr.split(' ').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ');
+    };
+    
+    cargos.forEach(cargo => {
+      const consolidatedCargo = normalizeCargo(cargo);
+      consolidatedCounts[consolidatedCargo] = (consolidatedCounts[consolidatedCargo] || 0) + 1;
+    });
+
+    return Object.entries(consolidatedCounts)
+      .map(([cargo, count]) => ({ cargo, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+
+  const getQuestionData = (question, filteredData = null) => {
+    const workingData = filteredData || data;
+    const responses = workingData.map(row => row[question]).filter(Boolean);
+    const counts = {};
+    
+    responses.forEach(response => {
+      const cleanResponse = String(response).trim();
+      counts[cleanResponse] = (counts[cleanResponse] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value, fullName: name }))
+      .sort((a, b) => b.value - a.value);
+  };
+
+  const extractMeaningfulPhrases = (question, filteredData = null) => {
+    const workingData = filteredData || data;
+    const responses = workingData.map(row => row[question]).filter(Boolean);
+    
+    // Extraer frases y conceptos significativos
+    const phrases = {};
+    const concepts = {};
+    const wordToResponses = {};
+    
+    responses.forEach(response => {
+      const cleanResponse = String(response).trim();
+      
+      // Buscar frases de 2-4 palabras significativas
+      const words = cleanResponse.toLowerCase()
+        .replace(/[^\w\sáéíóúñü]/g, '')
+        .split(/\s+/)
+        .filter(word => word.length > 2 && !STOP_WORDS.includes(word));
+
+      // Generar frases de 2-3 palabras
+      for (let i = 0; i < words.length - 1; i++) {
+        const phrase2 = `${words[i]} ${words[i + 1]}`;
+        phrases[phrase2] = (phrases[phrase2] || 0) + 1;
+        
+        if (!wordToResponses[phrase2]) wordToResponses[phrase2] = [];
+        wordToResponses[phrase2].push({
+          response: cleanResponse,
+          question: question
+        });
+        
+        if (i < words.length - 2) {
+          const phrase3 = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+          phrases[phrase3] = (phrases[phrase3] || 0) + 1;
+          
+          if (!wordToResponses[phrase3]) wordToResponses[phrase3] = [];
+          wordToResponses[phrase3].push({
+            response: cleanResponse,
+            question: question
+          });
+        }
+      }
+      
+      // Conceptos individuales significativos
+      words.forEach(word => {
+        if (word.length > 4) { // Solo palabras largas y significativas
+          concepts[word] = (concepts[word] || 0) + 1;
+          
+          if (!wordToResponses[word]) wordToResponses[word] = [];
+          wordToResponses[word].push({
+            response: cleanResponse,
+            question: question
+          });
+        }
+      });
+    });
+
+    // Combinar frases y conceptos, priorizando frases
+    const allItems = [
+      ...Object.entries(phrases).map(([text, count]) => ({ text, count, type: 'phrase' })),
+      ...Object.entries(concepts).map(([text, count]) => ({ text, count, type: 'concept' }))
+    ];
+
+    return {
+      topItems: allItems
+        .filter(item => item.count > 1) // Solo items que aparecen más de una vez
+        .sort((a, b) => {
+          // Priorizar frases sobre conceptos individuales
+          if (a.type === 'phrase' && b.type === 'concept') return -1;
+          if (a.type === 'concept' && b.type === 'phrase') return 1;
+          return b.count - a.count;
+        })
+        .slice(0, 12),
+      wordToResponses,
+      totalResponses: responses.length
+    };
+  };
+
+  const getSchoolData = (schoolName) => {
+    if (!processedData || !processedData.colegioColumn) return null;
+    
+    return data.filter(row => {
+      const schoolValue = String(row[processedData.colegioColumn] || '').toLowerCase().trim();
+      return schoolValue.includes(schoolName.toLowerCase()) || schoolName.toLowerCase().includes(schoolValue);
+    });
+  };
+
+  const renderMultipleChoiceChart = (question, filteredData = null, key = null) => {
+    const chartData = getQuestionData(question, filteredData);
+    const isColegioQuestion = question.toLowerCase().includes('colegio') || question.toLowerCase().includes('pertenece');
+    
+    if (chartData.length === 0) return null;
+
+    const CustomTooltip = ({ active, payload }) => {
+      if (active && payload && payload.length) {
+        return (
+          <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
+            <p className="text-sm font-medium">{payload[0].payload.fullName}</p>
+            <p className="text-sm text-blue-600">Respuestas: {payload[0].value}</p>
+          </div>
+        );
+      }
+      return null;
+    };
+
+    return (
+      <div key={key || question} className="bg-white p-4 rounded-lg shadow-md">
+        <h3 className="text-sm font-semibold mb-3 text-gray-800 leading-tight">{question}</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          {isColegioQuestion || chartData.length <= 6 ? (
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, value, percent }) => 
+                  percent > 3 ? `${value} (${(percent * 100).toFixed(1)}%)` : `${value}`
+                }
+                outerRadius={90}
+                fill="#8884d8"
+                dataKey="value"
+                fontSize={9}
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          ) : (
+            <BarChart data={chartData} margin={{ bottom: 80, left: 20, right: 20, top: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis 
+                dataKey="name" 
+                angle={0} 
+                textAnchor="middle" 
+                height={80}
+                fontSize={9}
+                interval={0}
+                tick={{ fontSize: 9 }}
+              />
+              <YAxis fontSize={9} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="value" fill="#8884d8" />
+            </BarChart>
+          )}
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
+  const renderCargoTable = (filteredData = null) => {
+    const cargoData = getCargoData(filteredData);
+    
+    if (!cargoData.length) return null;
+
+    return (
+      <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-orange-500">
+        <div className="flex items-center mb-4">
+          <Briefcase className="h-6 w-6 text-orange-600 mr-2" />
+          <h3 className="text-lg font-semibold text-gray-800">Resumen de Cargos</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full table-auto">
+            <thead>
+              <tr className="bg-gradient-to-r from-orange-50 to-yellow-50">
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-700 uppercase tracking-wider border-b-2 border-orange-200">
+                  Cargo
+                </th>
+                <th className="px-4 py-3 text-center text-sm font-bold text-gray-700 uppercase tracking-wider border-b-2 border-orange-200">
+                  Cantidad
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {cargoData.map(({ cargo, count }, index) => (
+                <tr key={index} className={`${index % 2 === 0 ? 'bg-white' : 'bg-orange-25'} hover:bg-orange-50 transition-colors`}>
+                  <td className="px-4 py-3 text-sm text-gray-900 font-medium border-r border-gray-200">
+                    {cargo}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-orange-100 text-orange-700 border border-orange-200">
+                      {count}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 text-xs text-gray-500 text-center">
+          Total de respuestas analizadas: {filteredData?.length || data.length}
+        </div>
+      </div>
+    );
+  };
+
+  const renderOpenQuestionIdeas = (question, filteredData = null, key = null) => {
+    const analysis = extractMeaningfulPhrases(question, filteredData);
+    
+    if (!analysis.topItems.length) return null;
+
+    const handleWordClick = (item) => {
+      setSelectedWord({
+        word: item.text,
+        responses: analysis.wordToResponses[item.text].map(item => ({
+          response: item.response,
+          question: item.question
+        })),
+        question: question
+      });
+      setShowResponses(true);
+    };
+
+    return (
+      <div key={key || question} className="bg-white p-6 rounded-lg shadow-md">
+        <h3 className="text-sm font-semibold mb-4 text-gray-800 leading-tight">{question}</h3>
+        
+        {/* Concepto más mencionado */}
+        {analysis.topItems[0] && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+            <p className="text-xs text-blue-600 mb-1">
+              {analysis.topItems[0].type === 'phrase' ? 'Frase' : 'Concepto'} más mencionado ({analysis.topItems[0].count} veces):
+            </p>
+            <p className="text-sm font-medium text-blue-800 capitalize">
+              "{analysis.topItems[0].text}"
+            </p>
+          </div>
+        )}
+
+        {/* Lluvia de ideas interactiva */}
+        <div className="space-y-3">
+          <p className="text-xs text-gray-600 mb-2">Conceptos y frases más significativos (haz clic para ver respuestas):</p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {analysis.topItems.map((item, index) => (
+              <button
+                key={item.text}
+                onClick={() => handleWordClick(item)}
+                className="relative px-3 py-2 rounded-full text-white font-medium shadow-md transform hover:scale-105 transition-all cursor-pointer hover:shadow-lg"
+                style={{
+                  backgroundColor: COLORS[index % COLORS.length],
+                  fontSize: `${Math.min(13, 9 + Math.sqrt(item.count))}px`,
+                  margin: `${Math.random() * 3}px`
+                }}
+              >
+                <span className="relative z-10 capitalize">{item.text}</span>
+                <span className="text-xs opacity-75 ml-1">({item.count})</span>
+                
+                {/* Efecto de burbuja */}
+                <div 
+                  className="absolute inset-0 rounded-full opacity-20"
+                  style={{
+                    backgroundColor: 'white',
+                    transform: `scale(${0.8 + (item.count / Math.max(...analysis.topItems.map(i => i.count))) * 0.4})`
+                  }}
+                ></div>
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div className="mt-3 text-xs text-gray-500 text-center">
+          {analysis.totalResponses} respuestas analizadas
+        </div>
+      </div>
+    );
+  };
+
+  // Modal para mostrar respuestas con pregunta y respuesta completa
+  const ResponseModal = () => {
+    if (!showResponses || !selectedWord) return null;
+
+    // Agrupar respuestas por pregunta
+    const responsesByQuestion = {};
+    selectedWord.responses.forEach(item => {
+      if (!responsesByQuestion[item.question]) {
+        responsesByQuestion[item.question] = [];
+      }
+      responsesByQuestion[item.question].push(item.response);
+    });
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-5xl max-h-[85vh] overflow-hidden shadow-2xl">
+          <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-purple-50 to-blue-50">
+            <div>
+              <h3 className="text-xl font-bold text-gray-800">
+                Respuestas que contienen: 
+                <span className="text-purple-600 ml-2 px-3 py-1 bg-purple-100 rounded-full text-lg">
+                  "{selectedWord.word}"
+                </span>
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {selectedWord.responses.length} respuesta{selectedWord.responses.length > 1 ? 's' : ''} encontrada{selectedWord.responses.length > 1 ? 's' : ''}
+              </p>
+            </div>
+            <button 
+              onClick={() => setShowResponses(false)}
+              className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          
+          <div className="p-6 overflow-y-auto max-h-[70vh]">
+            {Object.entries(responsesByQuestion).map(([question, responses], qIndex) => (
+              <div key={qIndex} className="mb-8">
+                {/* Pregunta */}
+                <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-l-4 border-blue-500">
+                  <h4 className="text-sm font-semibold text-blue-800 mb-2">Pregunta:</h4>
+                  <p className="text-sm text-blue-700 font-medium">"{question}"</p>
+                </div>
+                
+                {/* Respuestas para esta pregunta */}
+                <div className="space-y-3 ml-4">
+                  <h5 className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                    Respuestas ({responses.length}):
+                  </h5>
+                  {responses.map((response, rIndex) => (
+                    <div key={rIndex} className="p-4 bg-gray-50 rounded-lg border-l-4 border-green-400 hover:bg-gray-100 transition-colors">
+                      <p className="text-sm text-gray-800 leading-relaxed">
+                        <span className="text-green-600 font-medium">#{rIndex + 1}:</span> "{response}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="border-t p-4 bg-gray-50 text-center">
+            <p className="text-xs text-gray-500">
+              Haz clic en otra palabra de la lluvia de ideas para explorar más respuestas
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (!data) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-800 mb-4 flex items-center">
+              <img 
+                src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTIwIDMuMzMzMzNMMjcuNSA4LjMzMzMzVjE2LjY2NjdMMjcuNSAyMS42NjY3TDIwIDI2LjY2NjdMMTIuNSAyMS42NjY3VjguMzMzMzNMMjAgMy4zMzMzM1oiIGZpbGw9IiMyYjNiNmQiLz4KPHA1YXRoIGQ9Ik0yMCAzNi42NjY3TDI3LjUgMzEuNjY2N1YxOC4zMzMzTDIwIDEzLjMzMzNMMTIuNSAxOC4zMzMzVjMxLjY2NjdMMjAgMzYuNjY2N1oiIGZpbGw9IiMxREQ2OEUiLz4KPC9zdmc+" 
+                alt="Alianza Educativa Logo" 
+                className="mr-3"
+              />
+              Tablero de percepción formaciones IA
+            </h1>
+            <p className="text-gray-600">Sube tu archivo Excel para comenzar el análisis</p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <FileSpreadsheet className="mx-auto mb-4 h-16 w-16 text-blue-500" />
+            <h3 className="text-xl font-semibold mb-4">Cargar archivo Excel</h3>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8">
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+                disabled={loading}
+              />
+              <label
+                htmlFor="file-upload"
+                className="cursor-pointer flex flex-col items-center"
+              >
+                <Upload className="h-12 w-12 text-gray-400 mb-4" />
+                <span className="text-lg text-gray-600">
+                  {loading ? 'Cargando...' : 'Haz clic para subir tu archivo .xlsx'}
+                </span>
+                <span className="text-sm text-gray-500 mt-2">
+                  Solo archivos Excel (.xlsx)
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!processedData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Procesando datos...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentSchoolData = selectedView !== 'general' ? getSchoolData(selectedView) : null;
+  const participantCount = currentSchoolData ? currentSchoolData.length : processedData.totalResponses;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <ResponseModal />
+      
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center">
+              <img 
+                src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHA1YXRoIGQ9Ik0yMCAzLjMzMzMzTDI3LjUgOC4zMzMzM1YxNi42NjY3TDI3LjUgMjEuNjY2N0wyMCAyNi42NjY3TDEyLjUgMjEuNjY2N1Y4LjMzMzMzTDIwIDMuMzMzMzNaIiBmaWxsPSIjMmIzYjZkIi8+CjxwYXRoIGQ9Ik0yMCAzNi42NjY3TDI3LjUgMzEuNjY2N1YxOC4zMzMzTDIwIDEzLjMzMzNMMTIuNSAxOC4zMzMzVjMxLjY2NjdMMjAgMzYuNjY2N1oiIGZpbGw9IiMxREQ2OEUiLz4KPC9zdmc+" 
+                alt="Alianza Educativa Logo" 
+                className="mr-3"
+              />
+              Tablero de percepción formaciones IA
+            </h1>
+            <div className="flex items-center space-x-4">
+              <select
+                value={selectedView}
+                onChange={(e) => setSelectedView(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gradient-to-r from-blue-50 to-indigo-50"
+              >
+                <option value="general">Información General</option>
+                {COLEGIOS.map(colegio => (
+                  <option key={colegio} value={colegio}>{colegio}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => document.getElementById('file-upload-new').click()}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-md hover:from-blue-700 hover:to-indigo-800 transition-all shadow-md"
+              >
+                Cambiar archivo
+              </button>
+              <input
+                id="file-upload-new"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+                disabled={loading}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-600">
+            <div className="flex items-center">
+              <Users className="h-8 w-8 text-blue-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">
+                  {selectedView === 'general' ? 'Total Respuestas' : 'Participantes'}
+                </p>
+                <p className="text-2xl font-bold text-gray-900">{participantCount}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
+            <div className="flex items-center">
+              <BarChart3 className="h-8 w-8 text-green-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Preguntas Opción Múltiple</p>
+                <p className="text-2xl font-bold text-gray-900">{processedData.multipleChoiceQuestions.length}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
+            <div className="flex items-center">
+              <MessageSquare className="h-8 w-8 text-purple-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Preguntas Abiertas</p>
+                <p className="text-2xl font-bold text-gray-900">{processedData.openQuestions.length}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-orange-500">
+            <div className="flex items-center">
+              <School className="h-8 w-8 text-orange-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Vista Actual</p>
+                <p className="text-sm font-bold text-gray-900">
+                  {selectedView === 'general' ? 'General' : selectedView}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Cargo Table */}
+        {processedData.cargoColumn && (
+          <div className="mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {renderCargoTable(currentSchoolData)}
+            </div>
+          </div>
+        )}
+
+        {/* Multiple Choice Questions Section - SOLO gráficos */}
+        <div className="mb-12">
+          <div className="flex items-center mb-6">
+            <Target className="h-6 w-6 text-blue-600 mr-2" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Preguntas de Opción Múltiple ({processedData.multipleChoiceQuestions.length})
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {processedData.multipleChoiceQuestions.map((question, index) => 
+              renderMultipleChoiceChart(question, currentSchoolData, `mc-${index}`)
+            )}
+          </div>
+          {processedData.multipleChoiceQuestions.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <Target className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+              <p>No se encontraron preguntas de opción múltiple</p>
+            </div>
+          )}
+        </div>
+
+        {/* Open Questions Section - SOLO lluvia de ideas */}
+        {processedData.openQuestions.length > 0 && (
+          <div className="mb-12">
+            <div className="flex items-center mb-6">
+              <MessageSquare className="h-6 w-6 text-purple-600 mr-2" />
+              <h2 className="text-xl font-semibold text-gray-800">
+                Lluvia de Ideas - Preguntas Abiertas ({processedData.openQuestions.length})
+              </h2>
+              <div className="ml-3 text-xs text-gray-500 bg-purple-50 px-2 py-1 rounded">
+                Solo análisis textual - Sin gráficos
+              </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {processedData.openQuestions.map((question, index) => 
+                renderOpenQuestionIdeas(question, currentSchoolData, `open-${index}`)
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SurveyDashboard;
