@@ -1,6 +1,15 @@
 let excelData = [];
 let chartInstances = [];
 
+// Exclusiones fijas
+const excludedQuestions = [
+    "Marca temporal",
+    "Puntuación",
+    "NOMBRE COMPLETO",
+    "Cargo que desempeñas",
+    "Colegio" // no graficar
+];
+
 document.getElementById("fileInput").addEventListener("change", handleFile);
 document.getElementById("colegioSelect").addEventListener("change", (e) => {
     renderCharts(e.target.value);
@@ -15,7 +24,7 @@ async function handleFile(event) {
     const sheet = workbook.Sheets[sheetName];
     excelData = XLSX.utils.sheet_to_json(sheet);
 
-    renderCharts("general"); // mostrar general por defecto
+    renderCharts("general"); // por defecto
 }
 
 function renderCharts(filter) {
@@ -30,16 +39,22 @@ function renderCharts(filter) {
     chartInstances.forEach(chart => chart.destroy());
     chartInstances = [];
 
+    // Filtrar datos
     let filteredData = excelData;
     if (filter !== "general") {
-        filteredData = excelData.filter(row => row.Colegio?.trim() === filter);
+        filteredData = excelData.filter(
+            row => (row.Colegio?.trim() || "").toLowerCase() === filter.toLowerCase()
+        );
+    }
+
+    if (filteredData.length === 0) {
+        resumenDiv.innerHTML = `<p style="color:red"><b>No hay datos para ${filter}</b></p>`;
+        return;
     }
 
     // ----------------- Resumen -----------------
     const totalRespuestas = filteredData.length;
-    const preguntas = Object.keys(excelData[0]).filter(
-        key => !["Marca temporal", "Puntuación", "NOMBRE COMPLETO", "Cargo que desempeñas", "Colegio"].includes(key)
-    );
+    const preguntas = Object.keys(excelData[0]).filter(key => !excludedQuestions.includes(key));
     const colegiosUnicos = [...new Set(excelData.map(row => row.Colegio))].filter(c => c);
 
     if (filter === "general") {
@@ -56,7 +71,7 @@ function renderCharts(filter) {
         `;
     }
 
-    // ----------------- Gráficas -----------------
+    // ----------------- Gráficas y abiertas -----------------
     preguntas.forEach(question => {
         const sampleValue = filteredData[0][question];
         const isOpenQuestion = typeof sampleValue === "string" && sampleValue.split(" ").length > 5;
@@ -64,71 +79,4 @@ function renderCharts(filter) {
         if (isOpenQuestion) {
             // Procesar preguntas abiertas
             let allWords = [];
-            filteredData.forEach(row => {
-                if (row[question]) {
-                    allWords.push(...row[question].toLowerCase().split(/\s+/));
-                }
-            });
-
-            let wordCounts = {};
-            allWords.forEach(word => {
-                if (word.length > 3) { // evitar palabras cortas
-                    wordCounts[word] = (wordCounts[word] || 0) + 1;
-                }
-            });
-
-            let sortedWords = Object.entries(wordCounts)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10);
-
-            const div = document.createElement("div");
-            div.className = "open-question";
-            div.innerHTML = `
-                <h3>${question}</h3>
-                <p><b>Palabras más repetidas:</b></p>
-                <ul>${sortedWords.map(w => `<li>${w[0]} (${w[1]})</li>`).join("")}</ul>
-            `;
-            openQuestionsDiv.appendChild(div);
-
-        } else {
-            // Procesar preguntas cerradas (con gráficas)
-            const counts = {};
-            filteredData.forEach(row => {
-                const value = row[question] || "No responde";
-                counts[value] = (counts[value] || 0) + 1;
-            });
-
-            const labels = Object.keys(counts);
-            const values = Object.values(counts);
-
-            const chartDiv = document.createElement("div");
-            chartDiv.className = "chart-item";
-
-            const canvas = document.createElement("canvas");
-            chartDiv.appendChild(canvas);
-            chartsContainer.appendChild(chartDiv);
-
-            const chart = new Chart(canvas, {
-                type: "bar",
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: question,
-                        data: values,
-                        backgroundColor: "rgba(56, 89, 136, 0.7)"
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: false },
-                        title: { display: true, text: question }
-                    },
-                    scales: { y: { beginAtZero: true } }
-                }
-            });
-
-            chartInstances.push(chart);
-        }
-    });
-}
+            filt
